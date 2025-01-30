@@ -13,11 +13,15 @@ from tg_states import (
 )
 
 
-POOL_ADDRESS = '3u8HSoHpqZDVwZZnBboyfGoVUBHqdKAkrEtp2aKK1MLP'
+POOL_ADDRESS = 'XRjzqU3rymHiwtDNPujLpGFVGpSFYPmAUGm3NJG2JN5'
 
 load_dotenv()
 
 TOKEN = os.getenv('TOKEN')
+
+POOL_KEY = os.getenv('POOL_KEY')
+
+print(type(POOL_KEY))
 
 bot = AsyncTeleBot(TOKEN, parse_mode='Markdown', disable_web_page_preview=True, state_storage= StateMemoryStorage())
 
@@ -56,6 +60,7 @@ def rock_game(message, userid1, userid2):
 async def make_bet(message, userid1, userid2):
     wallet1 = db_user.get_wallet(userid1)
     wallet2 = db_user.get_wallet(userid2)
+    print(wallet1, wallet2)
     
     user1bet = db_bet.get_last_selection(userid1)
     user2bet = db_bet.get_last_selection(userid2)
@@ -69,25 +74,36 @@ async def make_bet(message, userid1, userid2):
         await bot.send_message(userid2, "You both made the same choice...\nBet has been cancelled")
         db_bet.update_result(userid1, 'Draw')
         db_bet.update_result(userid2, 'Draw')
+        amount = funcs.sol_to_lamports(0.1)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet1, amount)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet2, amount)
         
     elif user1bet == choice:
         await bot.send_message(userid1, "You won  the bet!!!")
         await bot.send_message(userid2, "You lost this bet round...")
         db_bet.update_result(userid1, 'Won')
         db_bet.update_result(userid2, 'Lost')
+        amount = funcs.sol_to_lamports(0.16)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet1, amount)
     
     elif user2bet == choice:
         await bot.send_message(userid2, "You won  the bet!!!")
         await bot.send_message(userid1, "You lost this bet round...")
         db_bet.update_result(userid1, 'Lost')
         db_bet.update_result(userid2, 'Won')
+        amount = funcs.sol_to_lamports(0.16)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet2, amount)
     
     elif user2bet == choice and user1bet == choice:
         await bot.send_message(userid1, "You both made the same choice...\nBet has been cancelled")
         await bot.send_message(userid2, "You both made the same choice...\nBet has been cancelled")
         db_bet.update_result(userid1, 'Draw')
         db_bet.update_result(userid2, 'Draw')
-
+        amount = funcs.sol_to_lamports(0.1)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet1, amount)
+        await funcs.send_transaction_with_priority_fee(POOL_KEY, wallet2, amount)
+        
+    await stop(message)
 
 async def bot_info_():
     return await bot.get_me()
@@ -155,6 +171,9 @@ async def start(message):
 Bet and earn anonymously with other bot members 
 
 Wallet address 
+
+Bal: {funcs.get_sol_bal(wallet)}
+
 `{wallet}` (tap to copy)
 has been generated for you.
 
@@ -239,23 +258,24 @@ async def find(message: types.Message):
         bal = funcs.get_sol_bal(wallet)
         print(bal)
         
-        if bal < 0.1001:
+        if bal > 0.11:
             if message.chat.id not in users:
                 await bot.send_message(message.chat.id, 'Search started...')
 
                 if freeid is None:
                     freeid = message.chat.id
                 else:
+                    mnemonics1 = db_user.get_mnemonics(owner)
+                    mnemonics2 = db_user.get_mnemonics(freeid)
+                    amount = funcs.sol_to_lamports(0.1)
+                    await funcs.send_transaction_with_priority_fee(mnemonics1, POOL_ADDRESS, amount)
+                    #await asyncio.sleep(10)
+                    await funcs.send_transaction_with_priority_fee(mnemonics2, POOL_ADDRESS, amount)
+                    
                     await bot.send_message(message.chat.id, 'Found a new User!')
                     await bot.send_message(freeid, 'Found a new User!')
                     await bot.send_message(message.chat.id, 'New user Found!!!\nYou have 5 minutes to chat and bet against each other\nFor fairplay, each betting session cost 0.1 sol.')
                     await bot.send_message(freeid, 'New user Found!!!\nYou have 5 minutes to chat and bet against each other\nFor fairplay, each betting session cost 0.1 sol.')
-                    mnemonics1 = db_user.get_mnemonics(owner)
-                    mnemonics2 = db_user.get_mnemonics(freeid)
-                    print(mnemonics1,mnemonics2)
-                    """funcs.transfer_sol(POOL_ADDRESS, 0.1, mnemonics1)
-                    await asyncio.run(10)
-                    funcs.transfer_sol(POOL_ADDRESS, 0.1, mnemonics2)"""
                     msg = "Select either Head or Tails and wait for 2 min for the system to decide outcome..."
                     markup = quick_markup({
                         'Head' : {'callback_data' : 'head'},
@@ -300,7 +320,7 @@ async def chatting(message: types.Message):
         await bot.copy_message(users[message.chat.id], users[users[message.chat.id]], message.id)
         await asyncio.sleep(20)
         await make_bet(message, users[message.chat.id], users[users[message.chat.id]])
-        await stop(message)
+        
     else:
         await bot.send_message(message.chat.id, 'No one can hear you...')
         
